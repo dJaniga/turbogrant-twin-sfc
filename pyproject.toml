@@ -1,0 +1,26 @@
+[project]
+name = "turbogrant-twin-sfc"
+version = "0.1.0"
+description = "Live/demo temperature monitor for a sensor-instrumented physical model"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.14"
+
+# All of these have prebuilt aarch64 wheels for Raspberry Pi OS (Bookworm,
+# 64-bit) — see CLAUDE.md §2 before adding anything here.
+dependencies = [
+    "PySide6>=6.7",
+    "pyqtgraph>=0.13.4",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pandas>=2.1",
+    "pyserial>=3.5",
+    "PyYAML>=6.0",
+    "pydantic>=2.13.4",
+]
+
+[tool.uv]
+# This is an application, not a distributable library: uv manages the
+# environment and the interpreter, but nothing here is built or installed as a
+# package. Run it with `uv run python src/main.py`.
+package = false
