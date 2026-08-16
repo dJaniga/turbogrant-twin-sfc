@@ -114,8 +114,15 @@ this section and CLAUDE.md §5.1 to match whatever the deployed sketch actually 
 
 ## Flashing
 
+From the project root, one command flashes the board and starts the app in Live mode
+on the same port:
+
+```bash
+uv run scripts/flash_and_run.py --install-libs     # --install-libs only needed once
+```
+
 Arduino IDE: open `sensor_reader/sensor_reader.ino`, select *Arduino Mega or Mega
-2560*, pick the port, upload. Or with `arduino-cli`:
+2560*, pick the port, upload. Or with `arduino-cli` directly:
 
 ```bash
 arduino-cli lib install "Adafruit MAX31865 library"

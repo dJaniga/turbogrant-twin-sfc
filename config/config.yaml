@@ -1,4 +1,4 @@
-# Physical Model Temperature Monitor — runtime configuration.
+# TurboGrant Twin SFC — runtime configuration.
 #
 # All relative paths are resolved against the project root (the directory that
 # contains this `config/` folder). Nothing in this file is duplicated in code:

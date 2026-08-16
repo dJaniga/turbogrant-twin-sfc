@@ -174,6 +174,30 @@ uv run python src/main.py -c /path/to/other.yaml --log-level DEBUG
 `uv run` syncs the environment before starting, so a fresh clone needs nothing else.
 (Activating `.venv` and running `python src/main.py` directly also works.)
 
+### Flash the Arduino and run, in one command
+
+On the rig, `scripts/flash_and_run.py` compiles and uploads
+[`firmware/sensor_reader`](firmware/README.md), waits for the board to re-enumerate,
+then starts the app in Live mode on the same port:
+
+```bash
+uv run scripts/flash_and_run.py                 # flash, then run live
+uv run scripts/flash_and_run.py --install-libs  # also install the MAX31865 library
+uv run scripts/flash_and_run.py --flash-only    # flash and stop
+uv run scripts/flash_and_run.py --skip-flash    # just run live
+uv run scripts/flash_and_run.py --dry-run       # print the commands, run nothing
+```
+
+It needs [`arduino-cli`](https://arduino.github.io/arduino-cli/latest/installation/)
+on PATH (or `--arduino-cli /path/to/it`). The board is selected with `--fqbn`
+(default `arduino:avr:mega`) and the port comes from the app's own auto-detection, so
+the board that gets flashed is the one the app then reads — override with `--port`.
+Unrecognised arguments are passed through to the app, e.g.
+`uv run scripts/flash_and_run.py --fullscreen`.
+
+The config is validated *before* the board is touched, so a broken `config.yaml`
+cannot cost you a flash cycle.
+
 Mode can also be switched at runtime from the toolbar, along with Start/Stop, Pause and
 Restart replay (Demo), and CSV recording.
 
@@ -221,6 +245,7 @@ session in `logs/` can be pointed at by `demo.csv_path` and replayed.
 ## Project structure
 
 ```
+scripts/flash_and_run.py  dev helper: flash the Arduino, then run in Live mode
 pyproject.toml          dependencies and Python requirement (uv-managed)
 uv.lock                 exact resolved versions — commit it, do not edit by hand
 .python-version         interpreter pin (3.14) used by uv

@@ -9,8 +9,6 @@ authors = [
   {name = "Damian Janiga", email = "janiga@agh.edu.pl"},
 ]
 
-# All of these have prebuilt aarch64 wheels for Raspberry Pi OS (Bookworm,
-# 64-bit) — see CLAUDE.md §2 before adding anything here.
 dependencies = [
     "PySide6>=6.7",
     "pyqtgraph>=0.13.4",
@@ -23,7 +21,4 @@ dependencies = [
 ]
 
 [tool.uv]
-# This is an application, not a distributable library: uv manages the
-# environment and the interpreter, but nothing here is built or installed as a
-# package. Run it with `uv run python src/main.py`.
 package = false
