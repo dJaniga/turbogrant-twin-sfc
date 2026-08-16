@@ -19,6 +19,7 @@ already validated, and frozen slotted dataclasses are cheaper per frame.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -43,6 +44,8 @@ __all__ = [
     "InterpolationMethod",
     "AppTheme",
     "AppConfig",
+    "ProtocolFormat",
+    "ProtocolConfig",
     "SerialConfig",
     "DemoConfig",
     "SensorConfig",
@@ -177,6 +180,64 @@ class AppConfig(_Section):
     """Window/taskbar icon. Any format Qt reads (.png, .ico, .svg); null = Qt default."""
 
 
+class ProtocolFormat(str, Enum):
+    """Shape of one line coming from the Arduino."""
+
+    KEY_VALUE = "key_value"
+    """``T1:23.44,T2:23.06,...`` — every reading carries its sensor id."""
+    VALUES = "values"
+    """``23.44,23.06,...`` — bare numbers, positional, in `sensors` order."""
+    REGEX = "regex"
+    """A full-line regular expression whose named groups are sensor ids."""
+
+
+class ProtocolConfig(_Section):
+    """How to read one line of serial data. See ``datasource.protocol``."""
+
+    format: Annotated[ProtocolFormat, BeforeValidator(_lowercase)] = ProtocolFormat.KEY_VALUE
+    field_separator: str = Field(default=",", min_length=1, max_length=4)
+    key_value_separator: str = Field(default=":", min_length=1, max_length=4)
+    allow_whitespace: bool = True
+    """Tolerate spaces around separators, so ``T1:23.4, T2:23.1`` parses too."""
+    id_pattern: str = r"T\d{1,2}"
+    """Regex fragment for a sensor id (``key_value`` only)."""
+    value_pattern: str = r"-?\d+(?:\.\d+)?"
+    """Regex fragment for a reading. The default takes signed ints and decimals
+    but rejects ``NaN``, ``inf`` and scientific notation on purpose: Arduino's
+    ``Serial.print(float)`` never emits those, so seeing one means line noise."""
+    line_prefix: str | None = None
+    """Framing stripped before parsing, e.g. ``"DATA:"``."""
+    line_suffix: str | None = None
+    pattern: str | None = None
+    """Full-line regex; required by (and only valid for) ``format: regex``."""
+
+    @field_validator("id_pattern", "value_pattern", "pattern")
+    @classmethod
+    def _must_compile(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        try:
+            re.compile(value)
+        except re.error as exc:
+            raise ValueError(f"is not a valid regular expression: {exc}") from exc
+        return value
+
+    @model_validator(mode="after")
+    def _check_combination(self) -> "ProtocolConfig":
+        if self.field_separator == self.key_value_separator:
+            raise ValueError("field_separator and key_value_separator must differ")
+        if self.format is ProtocolFormat.REGEX:
+            if not self.pattern:
+                raise ValueError("format 'regex' requires `pattern`")
+            if not re.compile(self.pattern).groupindex:
+                raise ValueError(
+                    "`pattern` needs one named group per sensor, e.g. (?P<T1>-?\\d+\\.\\d+)"
+                )
+        elif self.pattern is not None:
+            raise ValueError(f"`pattern` only applies to format 'regex', not {self.format.value!r}")
+        return self
+
+
 class SerialConfig(_Section):
     port: str = Field(min_length=1)
     baud_rate: PositiveInt = 115200
@@ -185,6 +246,7 @@ class SerialConfig(_Section):
     auto_detect: bool = True
     vid: UsbId | None = None
     pid: UsbId | None = None
+    protocol: ProtocolConfig = ProtocolConfig()
 
 
 class DemoConfig(_Section):
@@ -398,7 +460,40 @@ class Config(_Section):
                 "plotting.curve_colors: fewer colours "
                 f"({len(self.plotting.curve_colors)}) than sensors ({len(self.sensors)})"
             )
+
+        self._check_protocol()
         return self
+
+    def _check_protocol(self) -> None:
+        """The wire format has to name the same sensors the rest of the config does."""
+        protocol = self.serial.protocol
+        ids = {sensor.id for sensor in self.sensors}
+
+        if protocol.format is ProtocolFormat.REGEX and protocol.pattern:
+            groups = set(re.compile(protocol.pattern).groupindex)
+            if groups != ids:
+                missing = sorted(ids - groups)
+                unexpected = sorted(groups - ids)
+                detail = []
+                if missing:
+                    detail.append(f"no group for {', '.join(missing)}")
+                if unexpected:
+                    detail.append(f"unknown group(s) {', '.join(unexpected)}")
+                raise ValueError(
+                    "serial.protocol.pattern: named groups must match the sensor ids "
+                    f"exactly — {'; '.join(detail)}"
+                )
+
+        if protocol.format is ProtocolFormat.KEY_VALUE:
+            # A sensor whose id the id_pattern cannot match would make every
+            # frame incomplete, and the app would just log discarded lines.
+            id_re = re.compile(f"^(?:{protocol.id_pattern})$")
+            unmatched = sorted(i for i in ids if not id_re.match(i))
+            if unmatched:
+                raise ValueError(
+                    f"serial.protocol.id_pattern {protocol.id_pattern!r} does not match "
+                    f"sensor id(s): {', '.join(unmatched)}"
+                )
 
     # ----------------------------------------------------------------- helpers
     @property

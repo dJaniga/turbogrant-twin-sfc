@@ -33,6 +33,27 @@ serial:
                                 # null = match any port that looks like an Arduino
   pid: null
 
+  protocol:
+    # How one line from the Arduino is read. Change this to match the sketch —
+    # no Python edit needed. Lines that don't match are discarded and reported
+    # in the status bar together with an example of what was expected.
+    #
+    #   key_value  T1:23.44,T2:23.06,...   each reading carries its sensor id
+    #   values     23.44,23.06,...         bare numbers, in `sensors` order
+    #   regex      anything else, via a full-line pattern with named groups
+    format: key_value
+    field_separator: ","          # between readings
+    key_value_separator: ":"      # between id and value (key_value only)
+    allow_whitespace: true        # so "T1:23.44, T2:23.06" parses too
+    id_pattern: "T\\d{1,2}"       # what a sensor id looks like; must match the
+                                  # ids in the `sensors` list above
+    value_pattern: "-?\\d+(?:\\.\\d+)?"   # signed int or decimal; NaN, inf and
+                                  # 1e3 are rejected as line noise on purpose
+    line_prefix: null             # framing stripped before parsing, e.g. "DATA:"
+    line_suffix: null
+    pattern: null                 # only for format: regex, e.g.
+                                  # "^T1:(?P<T1>-?\\d+\\.\\d+);T2:(?P<T2>-?\\d+\\.\\d+)$"
+
 demo:
   csv_path: "data/demo/sample_run.csv"
   playback_rate_hz: 2

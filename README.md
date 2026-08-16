@@ -185,10 +185,32 @@ One `\n`-terminated line per sample, at `serial.baud_rate`:
 T1:23.44,T2:23.06,T3:22.91,T4:23.88,T5:25.10,T6:24.02,T7:23.55,T8:24.71,T9:23.19,T10:21.80
 ```
 
-`T` + 1–2 digits, a colon, then a signed integer or decimal; pairs separated by commas, no
-spaces. Lines that do not match, or that do not cover every configured sensor, are discarded
-and logged rather than plotted. Parsing lives in one place —
-`src/datasource/live_serial.py` (`FIELD_RE`, `LINE_RE`, `parse_line`).
+`T` + 1–2 digits, a colon, then a signed integer or decimal; pairs separated by commas
+(spaces around them are tolerated). Lines that do not match, or that do not cover every
+configured sensor, are discarded and logged rather than plotted.
+
+**The format is configurable** — match the sketch instead of editing Python, under
+`serial.protocol` in `config/config.yaml`:
+
+```yaml
+serial:
+  protocol:
+    format: key_value           # key_value | values | regex
+    field_separator: ","        # e.g. ";" 
+    key_value_separator: ":"    # e.g. "="
+    allow_whitespace: true      # "T1:23.44, T2:23.06" parses too
+    line_prefix: null           # framing stripped first, e.g. "DATA:"
+    line_suffix: null
+    pattern: null               # format: regex — named groups are sensor ids
+```
+
+- `key_value` — `T1:23.44,T2:23.06,…` (default), order-independent.
+- `values` — `23.44,23.06,…`, mapped positionally onto the `sensors` list.
+- `regex` — anything else, e.g. `"^#(?P<T1>-?\\d+\\.\\d+);(?P<T2>-?\\d+\\.\\d+)$"`.
+
+Invalid combinations (a regex whose groups don't match the sensor ids, an `id_pattern`
+that can't match them, identical separators) fail at startup rather than silently
+discarding every line. Parsing lives in one place — `src/datasource/protocol.py`.
 
 A faulted channel (open or shorted RTD) is sent as `-999.00`: the frame stays complete, and
 the value falls outside `sensor_limits.value_range`, so the app flags that sensor in red.

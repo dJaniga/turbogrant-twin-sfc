@@ -1,9 +1,10 @@
 """Live acquisition from the Arduino over USB serial.
 
-Everything protocol-specific lives in this module — the regexes, the parser and
-the port discovery. If the Arduino sketch changes (checksums, timestamps, more
-sensors), only :func:`parse_line` and the two regexes below change; nothing
-downstream is aware of the wire format (CLAUDE.md §5.1).
+The wire format itself lives in :mod:`datasource.protocol` and is built from
+``serial.protocol`` in the config, so a sketch that emits a different separator
+or a bare CSV line needs a config edit rather than a code change (CLAUDE.md §5).
+This module owns the port: discovery, opening, reconnecting, and handing each
+line to the protocol.
 
 Serial I/O runs on a :class:`QThread`; frames reach the GUI thread through Qt's
 queued signal delivery. No widget is ever touched from the worker.
@@ -12,7 +13,6 @@ queued signal delivery. No widget is ever touched from the worker.
 from __future__ import annotations
 
 import logging
-import re
 import time
 from typing import Sequence
 
@@ -23,50 +23,16 @@ from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 from config.schema import SensorConfig, SensorLimits, SerialConfig
 from .base import ConnectionState, DataSource
+from .protocol import LineProtocol
 
 _log = logging.getLogger(__name__)
 
-__all__ = ["FIELD_RE", "LINE_RE", "parse_line", "resolve_port", "LiveSerialSource"]
-
-
-# --------------------------------------------------------------------------- #
-# Protocol: `T1:23.4,T2:23.1,...,T10:24.0\n`
-# --------------------------------------------------------------------------- #
-
-#: One `key:value` pair. `T` + 1–2 digits, then a signed int/float. NaN, inf and
-#: scientific notation are rejected on purpose: `Serial.print(float)` never emits
-#: them, so seeing one means the line is garbage.
-FIELD_RE = re.compile(r"^T(\d{1,2}):(-?\d+(?:\.\d+)?)$")
-
-#: The whole line. Cardinality is *not* encoded here — it is checked against
-#: ``len(config.sensors)`` separately, so adding an 11th sensor is config-only.
-LINE_RE = re.compile(r"^T\d{1,2}:-?\d+(?:\.\d+)?(?:,T\d{1,2}:-?\d+(?:\.\d+)?)*$")
+__all__ = ["resolve_port", "LiveSerialSource"]
 
 #: USB vendor ids commonly seen on Arduino boards and clones, used by
 #: :func:`resolve_port` when ``serial.vid``/``serial.pid`` are not configured.
 _KNOWN_ARDUINO_VIDS = (0x2341, 0x2A03, 0x1A86, 0x0403, 0x10C4, 0x2E8A)
 _ARDUINO_HINTS = ("arduino", "ch340", "ch910", "usb serial", "usb-serial", "wch")
-
-
-def parse_line(raw: str) -> dict[str, float] | None:
-    """Parse one serial line into ``{sensor_id: celsius}``.
-
-    Returns ``None`` for anything malformed — truncated first reads after
-    connecting, line noise, a half-written buffer. The caller logs and discards;
-    a bad line must never raise or reach the GUI.
-    """
-    line = raw.strip()
-    if not LINE_RE.match(line):
-        return None
-
-    readings: dict[str, float] = {}
-    for field in line.split(","):
-        match = FIELD_RE.match(field)
-        if not match:
-            return None
-        sensor_id, value = match.group(1), match.group(2)
-        readings[f"T{sensor_id}"] = float(value)
-    return readings
 
 
 def resolve_port(config: SerialConfig) -> str:
@@ -115,9 +81,10 @@ class _SerialWorker(QObject):
     #: Malformed lines are common on connect; don't flood the status bar.
     _BAD_LINE_REPORT_INTERVAL_S = 5.0
 
-    def __init__(self, config: SerialConfig) -> None:
+    def __init__(self, config: SerialConfig, protocol: LineProtocol) -> None:
         super().__init__()
         self._config = config
+        self._protocol = protocol
         self._running = False
         self._port: serial.Serial | None = None
         self._bad_lines = 0
@@ -182,7 +149,7 @@ class _SerialWorker(QObject):
             return  # read timeout — normal when the board is idle
 
         line = raw.decode("ascii", errors="replace")
-        values = parse_line(line)
+        values = self._protocol.parse(line)
         if values is None:
             self._note_bad_line(line)
             return
@@ -194,9 +161,12 @@ class _SerialWorker(QObject):
         now = time.monotonic()
         if now - self._last_bad_report >= self._BAD_LINE_REPORT_INTERVAL_S:
             self._last_bad_report = now
+            # Include what the configured protocol expects: nearly every case is
+            # a mismatch between the sketch and `serial.protocol`.
             self.error.emit(
                 f"Discarded {self._bad_lines} malformed serial line(s); "
-                f"last: {line.strip()[:60]!r}"
+                f"last: {line.strip()[:60]!r}, expected e.g. "
+                f"{self._protocol.example()[:60]!r}"
             )
 
     def _close_port(self) -> None:
@@ -231,19 +201,30 @@ class LiveSerialSource(DataSource):
     ) -> None:
         super().__init__(sensors, limits, parent)
         self._config = serial_config
+        self._protocol = LineProtocol.from_config(
+            serial_config.protocol, [sensor.id for sensor in self._sensors]
+        )
         self._thread: QThread | None = None
         self._worker: _SerialWorker | None = None
+        _log.info(
+            "Serial protocol: %s — expecting lines like %s",
+            self._protocol.describe(),
+            self._protocol.example(),
+        )
 
     def describe(self) -> str:
         target = "auto-detect" if self._config.auto_detect else self._config.port
-        return f"Serial {target} @ {self._config.baud_rate} baud"
+        return (
+            f"Serial {target} @ {self._config.baud_rate} baud, "
+            f"{self._config.protocol.format.value}"
+        )
 
     def start(self) -> None:
         if self._thread is not None:
             return
         self._thread = QThread()
         self._thread.setObjectName("serial-reader")
-        self._worker = _SerialWorker(self._config)
+        self._worker = _SerialWorker(self._config, self._protocol)
         self._worker.moveToThread(self._thread)
 
         self._thread.started.connect(self._worker.run)

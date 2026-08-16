@@ -5,6 +5,9 @@ description = "Live/demo temperature monitor for a sensor-instrumented physical 
 readme = "README.md"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.14"
+authors = [
+  {name = "Damian Janiga", email = "janiga@agh.edu.pl"},
+]
 
 # All of these have prebuilt aarch64 wheels for Raspberry Pi OS (Bookworm,
 # 64-bit) — see CLAUDE.md §2 before adding anything here.

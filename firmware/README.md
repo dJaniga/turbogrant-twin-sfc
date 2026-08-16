@@ -98,15 +98,19 @@ One line per sample, `\n`-terminated:
 T1:23.44,T2:23.06,T3:22.91,T4:23.88,T5:25.10,T6:24.02,T7:23.55,T8:24.71,T9:23.19,T10:21.80
 ```
 
-Rules the Python parser enforces (`src/datasource/live_serial.py`):
+Rules the Python parser enforces, as configured by `serial.protocol` in
+`config/config.yaml` (parser: `src/datasource/protocol.py`):
 
 - `T` followed by 1–2 digits, a colon, then a signed integer or decimal.
-- Pairs separated by `,`, no spaces, no trailing comma.
+- Pairs separated by `,`; spaces around the separators are tolerated, a trailing
+  separator is not.
 - No `NaN`, `inf` or scientific notation — malformed lines are discarded and logged.
 - Every configured sensor must be present in the line; partial frames are dropped.
 
-If checksums, a timestamp field or more sensors are added later, update this
-section, the two regexes in `live_serial.py`, and CLAUDE.md §5.1 together.
+**If this sketch's output changes, change the config, not the Python.** Different
+separators, bare CSV without ids, a `DATA:` prefix or a trailing marker are all
+expressible under `serial.protocol` (`format: key_value | values | regex`). Update
+this section and CLAUDE.md §5.1 to match whatever the deployed sketch actually emits.
 
 ## Flashing
 
