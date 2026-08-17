@@ -58,6 +58,8 @@ demo:
   csv_path: "data/demo/sample_run.csv"
   playback_rate_hz: 2
   loop: true
+  apply_calibration: false      # recorded sessions already hold corrected values;
+                                # true only when replaying deliberately raw data
 
 model:
   # Physical size of the model the sensors are mounted on. The origin (0, 0) is
@@ -99,6 +101,28 @@ sensors:
   - {id: T9,  label: "T9",     x:  60.0, y: 72.0}
   - {id: T10, label: "T10",      x:  96.0, y: 72.0}
 
+calibration:
+  # Software compensation for the spread between sensors, measured against one
+  # trusted reference thermometer. Applied to live readings before anything else
+  # sees them; recorded sessions keep the raw values in `<id>_raw` columns.
+  #
+  # Don't write these by hand — record a calibration run with the app's
+  # "Record CSV" button while every sensor sits at the same known temperature,
+  # then generate the block below:
+  #
+  #   uv run scripts/calibrate.py --point logs/ice_bath.csv 0.05 \
+  #                               --point logs/warm_bath.csv 45.31 --type linear
+  #
+  # One point gives `offset`, two or more give `linear` (or `table`).
+  enabled: true
+  reference: null               # what you calibrated against, e.g.
+                                # "Fluke 1524 with 5608 probe, cert 2026-03"
+  sensors: {}
+    # T1: {type: offset, offset: -0.35, note: "ice bath 2026-08-17"}
+    # T2: {type: linear, gain: 1.0021, offset: -0.12}
+    # T3: {type: table, points: [[0.10, 0.05], [25.30, 25.02], [80.10, 79.55]]}
+    # Sensors without an entry are used exactly as received.
+
 interpolation:
   method: "rbf"                 # rbf | linear | cubic | nearest
   grid_resolution: 100          # keep modest on the Pi (see CLAUDE.md §9.3)
@@ -132,6 +156,8 @@ logging:
   level: "INFO"                 # DEBUG | INFO | WARNING | ERROR
   log_frames: true              # also write live frames to logs/session_*.csv,
                                 # replayable later in Demo mode
+  include_raw: true             # when calibration is active, add <id>_raw columns
+                                # so a session can be re-calibrated afterwards
 
 sponsor:
   # Branding strip. It is pinned to one edge of the window and cannot be closed

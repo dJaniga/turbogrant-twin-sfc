@@ -20,6 +20,7 @@ from typing import Mapping, Sequence
 from PySide6.QtCore import QObject, Signal
 
 from config.schema import SensorConfig, SensorLimits
+from processing.calibration import Calibration
 from .models import SensorFrame
 
 _log = logging.getLogger(__name__)
@@ -63,12 +64,14 @@ class DataSource(QObject, metaclass=_QObjectABCMeta):
         self,
         sensors: Sequence[SensorConfig],
         limits: SensorLimits | None = None,
+        calibration: Calibration | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._sensors = tuple(sensors)
         self._sensor_ids = frozenset(s.id for s in self._sensors)
         self._limits = limits or SensorLimits(value_range=None)
+        self._calibration = calibration or Calibration()
         self._state = ConnectionState.DISCONNECTED
         self._frames_emitted = 0
 
@@ -138,14 +141,20 @@ class DataSource(QObject, metaclass=_QObjectABCMeta):
             self._report_error(f"Sample discarded: {'; '.join(details)}")
             return False
 
+        # Range check first, on the *raw* reading: a fault sentinel such as
+        # -999.00 must be recognised as a fault, and must not be shifted by a
+        # calibration offset into something that merely looks odd.
         out_of_range = frozenset(
             sensor_id
             for sensor_id, value in values.items()
             if not self._limits.is_in_range(value)
         )
+        corrected = self._calibration.apply(values, skip=out_of_range)
+
         frame = SensorFrame(
             timestamp=timestamp if timestamp is not None else time.time(),
-            values=dict(values),
+            values=corrected,
+            raw_values=dict(values) if self._calibration.active else None,
             out_of_range=out_of_range,
         )
         self._frames_emitted += 1

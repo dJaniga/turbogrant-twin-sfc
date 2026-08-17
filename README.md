@@ -23,6 +23,9 @@ _TODO: add a screenshot or short GIF of the running app here (`docs/screenshot.p
   margins — with sensor markers and an optional model layout image.
 - **CSV recording** — live sessions are written to `logs/session_*.csv` in exactly the
   format Demo mode replays.
+- **Calibration** — per-sensor correction against a reference thermometer (offset,
+  linear, polynomial or multi-point table), fitted from a recorded run by
+  `scripts/calibrate.py`.
 - **Sponsor branding** — a persistent strip of logos (any number, each optionally
   clickable) docked to whichever window edge you configure; survives any dock
   rearrangement.
@@ -200,6 +203,55 @@ cannot cost you a flash cycle.
 
 Mode can also be switched at runtime from the toolbar, along with Start/Stop, Pause and
 Restart replay (Demo), and CSV recording.
+
+## Calibration
+
+Ten PT100 channels never read identically — RTD tolerance, the breakout's reference
+resistor and lead resistance all differ. The spread is corrected in software, from
+`config.yaml`, against one trusted reference thermometer.
+
+**Measuring it:**
+
+1. Put every sensor and the reference at the same temperature and let them settle
+   (a stirred bath is ideal; a closed box is usually good enough).
+2. Press **Record CSV** in the app for a minute or two, then press it again.
+3. Repeat at a second temperature if you want span as well as offset — e.g. an ice
+   bath and a warm bath spanning the range you actually care about.
+4. Fit the coefficients and paste the result into `config.yaml`:
+
+```bash
+uv run scripts/calibrate.py --point logs/ice_bath.csv 0.05 \
+                            --point logs/warm_bath.csv 45.31 \
+                            --reference "Fluke 1524 / 5608 probe"
+```
+
+The script prints each sensor's mean, its noise during the run and the fitted
+correction, then the YAML block. One `--point` gives an `offset`, two or more give
+`linear` (or `--type table` for piecewise-linear multi-point).
+
+```yaml
+calibration:
+  enabled: true
+  reference: "Fluke 1524 / 5608 probe"
+  sensors:
+    T1: {type: offset, offset: -0.35, note: "ice bath 2026-08-17"}
+    T2: {type: linear, gain: 1.0021, offset: -0.12}
+    T3: {type: table, points: [[0.10, 0.05], [25.30, 25.02], [80.10, 79.55]]}
+```
+
+Notes:
+
+- Correction is applied to live readings before anything else sees them; sensors
+  without an entry are used as received, and `enabled: false` disables the lot.
+- Faulty readings are **not** corrected — the firmware's `-999.00` stays exactly
+  that, so it is still flagged rather than becoming a slightly-shifted lie.
+- Recorded sessions store both: corrected values in the usual columns, and the
+  uncorrected ones as `<id>_raw` (`logging.include_raw`), so a run can be
+  re-calibrated later. `scripts/calibrate.py` prefers those raw columns, so
+  re-fitting never stacks a correction on top of an existing one.
+- Demo replay does **not** re-apply calibration (recorded data is already corrected).
+  Set `demo.apply_calibration: true` only for deliberately raw files.
+- Don't also put an offset in the Arduino sketch — correct in one place only.
 
 ## Arduino serial protocol
 

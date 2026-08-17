@@ -18,6 +18,7 @@ from config.schema import Config, Mode
 from datasource.base import ConnectionState, DataSource
 from datasource.demo_csv import DemoCSVSource
 from datasource.live_serial import LiveSerialSource
+from processing.calibration import Calibration
 
 _log = logging.getLogger(__name__)
 
@@ -25,11 +26,25 @@ __all__ = ["ModeController"]
 
 
 def _build_live(config: Config, parent: QObject) -> DataSource:
-    return LiveSerialSource(config.serial, config.sensors, config.sensor_limits, parent)
+    calibration = Calibration.from_config(config.calibration, config.sensor_ids)
+    calibration.log_summary()
+    return LiveSerialSource(
+        config.serial, config.sensors, config.sensor_limits, calibration, parent
+    )
 
 
 def _build_demo(config: Config, parent: QObject) -> DataSource:
-    return DemoCSVSource(config.demo, config.sensors, config.sensor_limits, parent)
+    # Recorded sessions already hold corrected values, so Demo mode does *not*
+    # calibrate by default — doing so would apply the correction twice. Set
+    # `demo.apply_calibration: true` when replaying a deliberately raw file.
+    calibration = (
+        Calibration.from_config(config.calibration, config.sensor_ids)
+        if config.demo.apply_calibration
+        else Calibration()
+    )
+    return DemoCSVSource(
+        config.demo, config.sensors, config.sensor_limits, calibration, parent
+    )
 
 
 #: Mode → factory. Register new acquisition backends here.

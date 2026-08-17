@@ -57,16 +57,28 @@ class SensorFrame:
     """Wall-clock epoch seconds (``time.time()``) of when the sample was taken."""
 
     values: Mapping[str, float]
-    """``sensor_id -> temperature in Celsius``."""
+    """``sensor_id -> temperature in Celsius``, after calibration."""
+
+    raw_values: Mapping[str, float] | None = None
+    """The uncorrected readings, when a calibration was applied — kept so a
+    session can be recorded raw and re-calibrated later. ``None`` when no
+    calibration is active (the values *are* the raw readings)."""
 
     out_of_range: frozenset[str] = field(default_factory=frozenset)
     """Sensor ids whose value fell outside ``sensor_limits.value_range``."""
 
     def __post_init__(self) -> None:
-        # Frames are handed to several panels; make the mapping unmodifiable so
-        # one consumer cannot corrupt another's view of it.
+        # Frames are handed to several panels; make the mappings unmodifiable so
+        # one consumer cannot corrupt another's view of them.
         if not isinstance(self.values, MappingProxyType):
             object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
+        if self.raw_values is not None and not isinstance(self.raw_values, MappingProxyType):
+            object.__setattr__(self, "raw_values", MappingProxyType(dict(self.raw_values)))
+
+    def raw(self, sensor_id: str) -> float:
+        """The uncorrected reading, or the corrected one when nothing was applied."""
+        source = self.raw_values if self.raw_values is not None else self.values
+        return source[sensor_id]
 
     def __iter__(self) -> Iterator[tuple[str, float]]:
         return iter(self.values.items())

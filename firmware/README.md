@@ -63,6 +63,10 @@ out of master mode.
 - **`RREF` must match the board.** Adafruit breakouts ship with 430 Ω for PT100
   (4300 Ω on PT1000 versions). Measure yours and put the real value in the sketch:
   it scales every reading linearly.
+- **Do not add per-sensor offsets here.** The residual spread between channels is
+  corrected in software, under `calibration:` in `config/config.yaml` (fitted by
+  `scripts/calibrate.py`). Correcting in both places would double-count. `RREF` and
+  `RNOMINAL` are the exception — they describe the hardware, not the sensor's error.
 - If you switch to PT1000, set `RNOMINAL = 1000.0` and `RREF = 4300.0`.
 - Sensor → position mapping is fixed by the `CS_PINS[]` order (T1 … T10); the X/Y
   position of each `T<n>` lives in `config/config.yaml` on the Python side.

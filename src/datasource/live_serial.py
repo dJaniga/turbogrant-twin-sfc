@@ -22,6 +22,7 @@ from serial.tools import list_ports
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 from config.schema import SensorConfig, SensorLimits, SerialConfig
+from processing.calibration import Calibration
 from .base import ConnectionState, DataSource
 from .protocol import LineProtocol
 
@@ -197,9 +198,10 @@ class LiveSerialSource(DataSource):
         serial_config: SerialConfig,
         sensors: Sequence[SensorConfig],
         limits: SensorLimits | None = None,
+        calibration: Calibration | None = None,
         parent: QObject | None = None,
     ) -> None:
-        super().__init__(sensors, limits, parent)
+        super().__init__(sensors, limits, calibration, parent)
         self._config = serial_config
         self._protocol = LineProtocol.from_config(
             serial_config.protocol, [sensor.id for sensor in self._sensors]
@@ -214,9 +216,10 @@ class LiveSerialSource(DataSource):
 
     def describe(self) -> str:
         target = "auto-detect" if self._config.auto_detect else self._config.port
+        calibrated = ", calibrated" if self._calibration.active else ""
         return (
             f"Serial {target} @ {self._config.baud_rate} baud, "
-            f"{self._config.protocol.format.value}"
+            f"{self._config.protocol.format.value}{calibrated}"
         )
 
     def start(self) -> None:

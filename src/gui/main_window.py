@@ -30,6 +30,7 @@ from datasource.base import ConnectionState
 from datasource.models import SensorFrame
 from logging_utils.logger import CsvFrameLogger
 from processing.buffer import RollingBuffer
+from processing.calibration import Calibration
 from . import theme
 from .mode_controller import ModeController
 from .panels.heatmap_panel import HeatmapPanel
@@ -66,7 +67,12 @@ class MainWindow(QMainWindow):
             # Sized by how fast data *arrives*, not how often the GUI redraws.
             expected_rate_hz=max(config.demo.playback_rate_hz, 5.0),
         )
-        self._recorder = CsvFrameLogger(config.sensor_ids, config.logging.output_dir)
+        self._recorder = CsvFrameLogger(
+            config.sensor_ids, config.logging.output_dir, config.logging.include_raw
+        )
+        self._calibration_active = Calibration.from_config(
+            config.calibration, config.sensor_ids
+        ).active
 
         self._status = StatusBar(self)
         self.setStatusBar(self._status)
@@ -335,7 +341,7 @@ class MainWindow(QMainWindow):
     def _on_record_toggled(self, recording: bool) -> None:
         if recording:
             try:
-                path = self._recorder.start()
+                path = self._recorder.start(calibrated=self._calibration_active)
             except OSError as exc:
                 self._record_action.setChecked(False)
                 self._status.show_error(f"Cannot start recording: {exc}")

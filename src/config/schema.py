@@ -53,6 +53,9 @@ __all__ = [
     "ModelConfig",
     "InterpolationConfig",
     "PlottingConfig",
+    "CalibrationType",
+    "SensorCalibration",
+    "CalibrationConfig",
     "ValueRange",
     "SensorLimits",
     "LoggingConfig",
@@ -253,6 +256,9 @@ class DemoConfig(_Section):
     csv_path: ProjectPath
     playback_rate_hz: PositiveFloat = 2.0
     loop: bool = True
+    apply_calibration: bool = False
+    """Recorded sessions already hold corrected values, so replaying one applies
+    no calibration. Set true only when the CSV holds deliberately *raw* readings."""
 
 
 class SensorConfig(_Section):
@@ -340,6 +346,62 @@ class ValueRange(_Section):
         return self
 
 
+class CalibrationType(str, Enum):
+    """How one sensor's readings are corrected. See ``processing.calibration``."""
+
+    NONE = "none"
+    OFFSET = "offset"
+    """``raw + offset`` — single-point calibration."""
+    LINEAR = "linear"
+    """``gain * raw + offset`` — two-point calibration."""
+    POLYNOMIAL = "polynomial"
+    """``c0 + c1*raw + c2*raw² + …``"""
+    TABLE = "table"
+    """Piecewise-linear from measured ``[raw, reference]`` pairs."""
+
+
+class SensorCalibration(_Section):
+    type: Annotated[CalibrationType, BeforeValidator(_lowercase)] = CalibrationType.NONE
+    offset: float = 0.0
+    gain: float = 1.0
+    coefficients: tuple[float, ...] = ()
+    points: tuple[tuple[float, float], ...] = ()
+    """``[[raw, reference], …]`` measured during a calibration run."""
+    note: str | None = None
+    """Free text — when and how this was measured. Worth filling in."""
+
+    @model_validator(mode="after")
+    def _check_for_type(self) -> "SensorCalibration":
+        if self.type is CalibrationType.LINEAR and self.gain == 0:
+            raise ValueError("linear calibration needs a non-zero gain")
+        if self.type is CalibrationType.POLYNOMIAL and len(self.coefficients) < 2:
+            raise ValueError("polynomial calibration needs at least two coefficients")
+        if self.type is CalibrationType.TABLE:
+            if len(self.points) < 2:
+                raise ValueError("table calibration needs at least two [raw, reference] points")
+            raws = [point[0] for point in self.points]
+            if len(set(raws)) != len(raws):
+                raise ValueError("table calibration has duplicate raw values")
+        if self.type is not CalibrationType.TABLE and self.points:
+            raise ValueError(f"`points` only applies to type 'table', not {self.type.value!r}")
+        if self.type is not CalibrationType.POLYNOMIAL and self.coefficients:
+            raise ValueError(
+                f"`coefficients` only applies to type 'polynomial', not {self.type.value!r}"
+            )
+        return self
+
+
+class CalibrationConfig(_Section):
+    """Software compensation for per-sensor differences (CLAUDE.md §5.2)."""
+
+    enabled: bool = True
+    """Master switch: false uses every reading exactly as received."""
+    reference: str | None = None
+    """What the readings were calibrated against, e.g. 'Fluke 1524 / 5608 probe'."""
+    sensors: dict[str, SensorCalibration] = {}
+    """Sensor id → correction. Sensors without an entry are left uncorrected."""
+
+
 class SensorLimits(_Section):
     """Plausibility band for readings; out-of-range values are flagged, not dropped."""
 
@@ -356,6 +418,10 @@ class LoggingConfig(_Section):
     output_dir: ProjectPath = Path("logs")
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_frames: bool = True
+    include_raw: bool = True
+    """Also write the uncorrected readings as ``<id>_raw`` columns when a
+    calibration is active, so a session can be re-calibrated later. Demo replay
+    ignores those columns."""
 
     _normalise_level = field_validator("level", mode="before")(_uppercase)
 
@@ -409,6 +475,7 @@ class Config(_Section):
     demo: DemoConfig
     model: ModelConfig
     sensors: tuple[SensorConfig, ...] = Field(min_length=1)
+    calibration: CalibrationConfig = CalibrationConfig()
     interpolation: InterpolationConfig = InterpolationConfig()
     plotting: PlottingConfig = PlottingConfig()
     sensor_limits: SensorLimits = SensorLimits()
@@ -459,6 +526,13 @@ class Config(_Section):
             raise ValueError(
                 "plotting.curve_colors: fewer colours "
                 f"({len(self.plotting.curve_colors)}) than sensors ({len(self.sensors)})"
+            )
+
+        unknown = sorted(set(self.calibration.sensors) - set(seen))
+        if unknown:
+            raise ValueError(
+                f"calibration.sensors: no such sensor(s): {', '.join(unknown)} "
+                f"(known ids: {', '.join(sorted(seen))})"
             )
 
         self._check_protocol()

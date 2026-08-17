@@ -56,9 +56,13 @@ def configure_logging(config: LoggingConfig) -> None:
 class CsvFrameLogger:
     """Appends frames to ``logs/session_<timestamp>.csv`` while recording."""
 
-    def __init__(self, sensor_ids: Sequence[str], output_dir: Path) -> None:
+    def __init__(
+        self, sensor_ids: Sequence[str], output_dir: Path, include_raw: bool = True
+    ) -> None:
         self._sensor_ids = tuple(sensor_ids)
         self._output_dir = output_dir
+        self._include_raw = include_raw
+        self._raw_columns: tuple[str, ...] = ()
         self._handle: TextIO | None = None
         self._writer: csv.writer | None = None
         self._path: Path | None = None
@@ -76,8 +80,13 @@ class CsvFrameLogger:
     def rows(self) -> int:
         return self._rows
 
-    def start(self, prefix: str = "session") -> Path:
-        """Open a new session file. Raises :class:`OSError` if it cannot be created."""
+    def start(self, prefix: str = "session", calibrated: bool = False) -> Path:
+        """Open a new session file. Raises :class:`OSError` if it cannot be created.
+
+        `calibrated` adds ``<id>_raw`` columns alongside the corrected ones, so the
+        session can be re-calibrated later; Demo replay reads only the plain
+        columns and ignores them.
+        """
         if self.is_recording:
             return self._path  # type: ignore[return-value]
         self._output_dir.mkdir(parents=True, exist_ok=True)
@@ -85,7 +94,12 @@ class CsvFrameLogger:
         self._path = self._output_dir / f"{prefix}_{stamp}.csv"
         self._handle = self._path.open("w", newline="", encoding="utf-8")
         self._writer = csv.writer(self._handle)
-        self._writer.writerow(["timestamp", *self._sensor_ids])
+        self._raw_columns = (
+            tuple(f"{sensor_id}_raw" for sensor_id in self._sensor_ids)
+            if (calibrated and self._include_raw)
+            else ()
+        )
+        self._writer.writerow(["timestamp", *self._sensor_ids, *self._raw_columns])
         self._rows = 0
         _log.info("Recording frames to %s", self._path)
         return self._path
@@ -94,9 +108,10 @@ class CsvFrameLogger:
         if self._writer is None or self._handle is None:
             return
         timestamp = datetime.fromtimestamp(frame.timestamp).isoformat(timespec="milliseconds")
-        self._writer.writerow(
-            [timestamp, *(f"{frame.values.get(s, float('nan')):.3f}" for s in self._sensor_ids)]
-        )
+        row = [timestamp, *(f"{frame.values.get(s, float('nan')):.3f}" for s in self._sensor_ids)]
+        if self._raw_columns:
+            row.extend(f"{frame.raw(s):.3f}" for s in self._sensor_ids)
+        self._writer.writerow(row)
         self._rows += 1
         if self._rows % 50 == 0:  # cheap durability without fsync per row
             self._handle.flush()

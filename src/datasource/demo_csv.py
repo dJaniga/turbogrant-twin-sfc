@@ -22,6 +22,7 @@ import pandas as pd
 from PySide6.QtCore import Qt, QObject, QTimer, Slot
 
 from config.schema import DemoConfig, SensorConfig, SensorLimits
+from processing.calibration import Calibration
 from .base import ConnectionState, DataSource
 
 _log = logging.getLogger(__name__)
@@ -71,9 +72,10 @@ class DemoCSVSource(DataSource):
         demo_config: DemoConfig,
         sensors: Sequence[SensorConfig],
         limits: SensorLimits | None = None,
+        calibration: Calibration | None = None,
         parent: QObject | None = None,
     ) -> None:
-        super().__init__(sensors, limits, parent)
+        super().__init__(sensors, limits, calibration, parent)
         self._config = demo_config
         self._rows: np.ndarray | None = None
         self._index = 0
