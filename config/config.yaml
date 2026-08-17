@@ -6,7 +6,7 @@
 
 app:
   title: "TurboGrant Twin SFC"
-  default_mode: demo            # live | demo
+  default_mode: live            # live | demo
   refresh_rate_hz: 10           # time-series redraw rate — this is the smoothness
                                 # knob. The plot scrolls with wall-clock time, so
                                 # higher = smoother motion (and more CPU). 10 Hz is
@@ -18,7 +18,7 @@ app:
                                 # colours with dark plot canvases; white makes
                                 # both the chrome and the plots white, which
                                 # suits bright rooms and printed screenshots.
-  icon_path: "src/assets/app_icon.png"   # window/taskbar icon; null = Qt default
+  icon_path: "src/assets/twin-sfc-icon.png"   # window/taskbar icon; null = Qt default
 
 serial:
   port: "/dev/ttyACM0"          # Raspberry Pi default for a genuine Mega 2560
@@ -88,16 +88,16 @@ sensors:
   # gap 25 cm to the nearest sensor). Rename the labels to match the model's real
   # zones, and move any sensor that has to sit somewhere specific — accuracy
   # degrades gracefully as long as the sensors stay spread out.
-  - {id: T1,  label: "Bottom left",    x:  24.0, y:  8.0}
-  - {id: T2,  label: "Bottom centre",  x:  60.0, y:  8.0}
-  - {id: T3,  label: "Bottom right",   x:  96.0, y:  8.0}
-  - {id: T4,  label: "Mid far left",   x:   8.0, y: 40.0}
-  - {id: T5,  label: "Mid left",       x:  36.0, y: 40.0}
-  - {id: T6,  label: "Mid right",      x:  84.0, y: 40.0}
-  - {id: T7,  label: "Mid far right",  x: 112.0, y: 40.0}
-  - {id: T8,  label: "Top left",       x:  24.0, y: 72.0}
-  - {id: T9,  label: "Top centre",     x:  60.0, y: 72.0}
-  - {id: T10, label: "Top right",      x:  96.0, y: 72.0}
+  - {id: T1,  label: "T1",    x:  24.0, y:  8.0}
+  - {id: T2,  label: "T2",  x:  60.0, y:  8.0}
+  - {id: T3,  label: "T3",   x:  96.0, y:  8.0}
+  - {id: T4,  label: "T4",   x:   8.0, y: 40.0}
+  - {id: T5,  label: "T5",       x:  36.0, y: 40.0}
+  - {id: T6,  label: "T6",      x:  84.0, y: 40.0}
+  - {id: T7,  label: "T7",  x: 112.0, y: 40.0}
+  - {id: T8,  label: "T8",       x:  24.0, y: 72.0}
+  - {id: T9,  label: "T9",     x:  60.0, y: 72.0}
+  - {id: T10, label: "T10",      x:  96.0, y: 72.0}
 
 interpolation:
   method: "rbf"                 # rbf | linear | cubic | nearest
@@ -150,6 +150,6 @@ sponsor:
     - path: "src/assets/AGH-wydz-wiertnictwa-logo.jpg"
       link_url: null
       max_height_px: null
-    - path: "src/assets/nig-logo.jpg"
+    - path: "src/assets/kn-kg-logo.png"
       link_url: null
       max_height_px: null

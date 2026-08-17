@@ -37,7 +37,7 @@ static const unsigned long BAUD_RATE = 115200;
 static const unsigned long SAMPLE_INTERVAL_MS = 1000;
 
 /* Chip-select pin per sensor, T1..T10. Any free digital pins will do. */
-static const uint8_t CS_PINS[SENSOR_COUNT] = {22, 23, 24, 25, 26, 27, 28, 29, 30, 31};
+static const uint8_t CS_PINS[SENSOR_COUNT] = {30, 31, 32, 33, 34, 35, 36, 37, 38, 39};
 
 /*
  * Reference resistor on the MAX31865 breakout and the RTD's nominal resistance
@@ -48,7 +48,7 @@ static const float RREF = 430.0f;
 static const float RNOMINAL = 100.0f;
 
 /* PT100 wiring per channel: MAX31865_2WIRE, MAX31865_3WIRE or MAX31865_4WIRE. */
-static const max31865_numwires_t RTD_WIRES = MAX31865_3WIRE;
+static const max31865_numwires_t RTD_WIRES = MAX31865_4WIRE;
 
 /*
  * Sent when an amplifier reports a fault (open/short RTD, broken cable). It is a
@@ -60,10 +60,10 @@ static const float FAULT_VALUE = -999.0f;
 
 /* Hardware SPI: the constructor takes only the CS pin. */
 static Adafruit_MAX31865 rtd[SENSOR_COUNT] = {
-    Adafruit_MAX31865(22), Adafruit_MAX31865(23), Adafruit_MAX31865(24),
-    Adafruit_MAX31865(25), Adafruit_MAX31865(26), Adafruit_MAX31865(27),
-    Adafruit_MAX31865(28), Adafruit_MAX31865(29), Adafruit_MAX31865(30),
-    Adafruit_MAX31865(31),
+    Adafruit_MAX31865(30), Adafruit_MAX31865(31), Adafruit_MAX31865(32),
+    Adafruit_MAX31865(33), Adafruit_MAX31865(34), Adafruit_MAX31865(35),
+    Adafruit_MAX31865(36), Adafruit_MAX31865(37), Adafruit_MAX31865(38),
+    Adafruit_MAX31865(39),
 };
 
 static unsigned long nextSampleAt = 0;
