@@ -1,25 +1,28 @@
-"""Flash the Arduino sketch, then start the monitor in Live mode.
+"""Flash the Arduino sketch for one hardware build, then start the monitor in Live mode.
 
-    uv run scripts/flash_and_run.py
+    uv run scripts/flash_and_run.py --hardware pt100      # 10 × PT100 via MAX31865
+    uv run scripts/flash_and_run.py --hardware ds18b20    # 10 × DS18B20
 
-One command for the rig: compile and upload `firmware/sensor_reader`, wait for the
-board to come back, then launch the app with `--mode live` on the same port.
+One command for the rig: compile and upload the build's sketch, wait for the board
+to come back, then launch the app with `--mode live` on the same port and with the
+build's own config file (see :data:`HARDWARE`). Both sketches emit the same serial
+protocol, so the app itself never knows which build it is reading — only the config
+differs, chiefly in its calibration coefficients.
 
 This is *development tooling*, not part of the application: nothing in `src/`
 imports it, and the app never touches `firmware/` at runtime (CLAUDE.md §3.1a).
 It does reuse the app's own config and port discovery, so the board it flashes is
 by construction the port the app will open.
 
-Requires `arduino-cli` on PATH (or `--arduino-cli`), plus the sketch's library:
+Requires `arduino-cli` on PATH (or `--arduino-cli`), plus the build's libraries
+(`--install-libs` installs them).
 
-    arduino-cli lib install "Adafruit MAX31865 library"     # or --install-libs
+Useful variants (all take --hardware):
 
-Useful variants:
-
-    uv run scripts/flash_and_run.py --fullscreen        # extra args go to the app
-    uv run scripts/flash_and_run.py --flash-only        # flash, don't launch
-    uv run scripts/flash_and_run.py --skip-flash        # launch live, don't flash
-    uv run scripts/flash_and_run.py --dry-run           # print the commands only
+    ... --fullscreen        # extra args go to the app
+    ... --flash-only        # flash, don't launch
+    ... --skip-flash        # launch live with the build's config, don't flash
+    ... --dry-run           # print the commands only
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ import shutil
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -42,8 +46,33 @@ from datasource.live_serial import resolve_port  # noqa: E402
 _log = logging.getLogger("flash_and_run")
 
 DEFAULT_FQBN = "arduino:avr:mega"
-DEFAULT_SKETCH = PROJECT_ROOT / "firmware" / "sensor_reader"
-DEFAULT_LIBRARIES = ("Adafruit MAX31865 library",)
+
+
+@dataclass(frozen=True)
+class Hardware:
+    """One sensor build of the rig: what to flash and which config reads it."""
+
+    description: str
+    sketch: Path
+    config: Path
+    libraries: tuple[str, ...]
+
+
+#: --hardware choices. A new build is a sketch folder, a config file and an entry here.
+HARDWARE = {
+    "pt100": Hardware(
+        description="10 x PT100 via MAX31865",
+        sketch=PROJECT_ROOT / "firmware" / "pt100_max31865",
+        config=DEFAULT_CONFIG_PATH,
+        libraries=("Adafruit MAX31865 library",),
+    ),
+    "ds18b20": Hardware(
+        description="10 x DS18B20, one pin each",
+        sketch=PROJECT_ROOT / "firmware" / "ds18b20",
+        config=PROJECT_ROOT / "config" / "config.ds18b20.yaml",
+        libraries=("OneWire", "DallasTemperature"),
+    ),
+}
 
 #: The board is reset by the upload; give it a moment before the app grabs the port.
 PORT_SETTLE_TIMEOUT_S = 10.0
@@ -59,22 +88,36 @@ def parse_args(argv: list[str] | None = None) -> tuple[argparse.Namespace, list[
         description="Flash the Arduino, then run the monitor in Live mode.",
         epilog="Unrecognised arguments are passed through to src/main.py.",
     )
-    parser.add_argument("-c", "--config", type=Path, default=DEFAULT_CONFIG_PATH,
-                        help=f"config file (default: {DEFAULT_CONFIG_PATH})")
+    # Required on purpose: the wrong sketch on a rig reads -999 on every channel,
+    # and the wrong config applies another build's calibration.
+    parser.add_argument("--hardware", required=True, choices=sorted(HARDWARE),
+                        help="sensor build: "
+                             + "; ".join(f"{name} = {hw.description}"
+                                         for name, hw in HARDWARE.items()))
+    parser.add_argument("-c", "--config", type=Path, default=None,
+                        help="config file (default: the build's own, see HARDWARE)")
     parser.add_argument("--fqbn", default=DEFAULT_FQBN,
                         help=f"fully qualified board name (default: {DEFAULT_FQBN})")
-    parser.add_argument("--sketch", type=Path, default=DEFAULT_SKETCH,
-                        help=f"sketch directory (default: {DEFAULT_SKETCH})")
+    parser.add_argument("--sketch", type=Path, default=None,
+                        help="sketch directory (default: the build's own, see HARDWARE)")
     parser.add_argument("--port", help="serial port; default is the app's own auto-detection")
     parser.add_argument("--arduino-cli", default=None,
                         help="path to arduino-cli (default: found on PATH)")
     parser.add_argument("--install-libs", action="store_true",
-                        help=f"install {', '.join(DEFAULT_LIBRARIES)} before compiling")
+                        help="install the build's Arduino libraries before compiling")
     parser.add_argument("--flash-only", action="store_true", help="flash, then stop")
     parser.add_argument("--skip-flash", action="store_true", help="skip flashing, just run live")
     parser.add_argument("--dry-run", action="store_true", help="print commands, run nothing")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
-    return parser.parse_known_args(argv)
+    args, passthrough = parser.parse_known_args(argv)
+
+    hardware = HARDWARE[args.hardware]
+    args.libraries = hardware.libraries
+    if args.sketch is None:
+        args.sketch = hardware.sketch
+    if args.config is None:
+        args.config = hardware.config
+    return args, passthrough
 
 
 def run(command: list[str], *, dry_run: bool, what: str) -> None:
@@ -137,7 +180,7 @@ def flash(args: argparse.Namespace, port: str) -> None:
         raise StepFailed(f"Sketch directory not found: {sketch}")
 
     if args.install_libs:
-        for library in DEFAULT_LIBRARIES:
+        for library in args.libraries:
             run([cli, "lib", "install", library], dry_run=args.dry_run,
                 what=f"Installing {library}")
 
@@ -179,6 +222,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.flash_only and args.skip_flash:
         _log.error("--flash-only and --skip-flash are mutually exclusive")
         return 2
+
+    _log.info("Hardware: %s (%s)", args.hardware, HARDWARE[args.hardware].description)
+    _log.info("Sketch:   %s", args.sketch)
+    _log.info("Config:   %s", args.config)
 
     try:
         config = load_config(args.config)

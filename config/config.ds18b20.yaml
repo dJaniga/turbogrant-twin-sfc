@@ -1,0 +1,197 @@
+# TurboGrant Twin SFC — runtime configuration for the **DS18B20 build**
+# (10 × DS18B20, sketch firmware/ds18b20). Selected by
+#
+#   uv run scripts/flash_and_run.py --hardware ds18b20
+#
+# or run directly with `uv run python src/main.py --config config/config.ds18b20.yaml`.
+# The PT100/MAX31865 build uses config/config.yaml. Both sketches emit the same
+# serial protocol; this file differs from config.yaml only in `calibration`
+# (fitted per build) and `sensor_limits` (DS18B20 range). Keep every other
+# section in sync with config.yaml by hand.
+#
+# All relative paths are resolved against the project root (the directory that
+# contains this `config/` folder). Nothing in this file is duplicated in code:
+# if a value needs to change per deployment, it belongs here.
+
+app:
+  title: "TurboGrant Twin SFC"
+  default_mode: live            # live | demo
+  refresh_rate_hz: 10           # time-series redraw rate — this is the smoothness
+                                # knob. The plot scrolls with wall-clock time, so
+                                # higher = smoother motion (and more CPU). 10 Hz is
+                                # a comfortable Pi 5 setting; 20–30 Hz is silky on
+                                # a desktop. Data rate is unrelated to this.
+  fullscreen: false             # true for a kiosk/exhibit rig on the Pi
+  window_size: [1400, 900]      # [width, height] in px, used when not fullscreen
+  theme: white                   # gray | white. gray keeps the system window
+                                # colours with dark plot canvases; white makes
+                                # both the chrome and the plots white, which
+                                # suits bright rooms and printed screenshots.
+  icon_path: "src/assets/twin-sfc-icon.png"   # window/taskbar icon; null = Qt default
+
+serial:
+  port: "/dev/ttyACM0"          # Raspberry Pi default for a genuine Mega 2560
+                                # (ATmega16U2 USB). Clones with a CH340 appear as
+                                # /dev/ttyUSB0; on Windows it is e.g. COM3.
+  baud_rate: 115200
+  timeout_s: 1.0
+  reconnect_interval_s: 3
+  auto_detect: true             # scan ports for a matching VID/PID first, fall
+                                # back to `port` when nothing matches
+  vid: null                     # genuine Mega 2560 R3: 0x2341 / pid 0x0042.
+                                # null = match any port that looks like an Arduino
+  pid: null
+
+  protocol:
+    # How one line from the Arduino is read. Change this to match the sketch —
+    # no Python edit needed. Lines that don't match are discarded and reported
+    # in the status bar together with an example of what was expected.
+    #
+    #   key_value  T1:23.44,T2:23.06,...   each reading carries its sensor id
+    #   values     23.44,23.06,...         bare numbers, in `sensors` order
+    #   regex      anything else, via a full-line pattern with named groups
+    format: key_value
+    field_separator: ","          # between readings
+    key_value_separator: ":"      # between id and value (key_value only)
+    allow_whitespace: true        # so "T1:23.44, T2:23.06" parses too
+    id_pattern: "T\\d{1,2}"       # what a sensor id looks like; must match the
+                                  # ids in the `sensors` list above
+    value_pattern: "-?\\d+(?:\\.\\d+)?"   # signed int or decimal; NaN, inf and
+                                  # 1e3 are rejected as line noise on purpose
+    line_prefix: null             # framing stripped before parsing, e.g. "DATA:"
+    line_suffix: null
+    pattern: null                 # only for format: regex, e.g.
+                                  # "^T1:(?P<T1>-?\\d+\\.\\d+);T2:(?P<T2>-?\\d+\\.\\d+)$"
+
+demo:
+  csv_path: "data/demo/sample_run.csv"
+  playback_rate_hz: 2
+  loop: true
+  apply_calibration: false      # recorded sessions already hold corrected values;
+                                # true only when replaying deliberately raw data
+
+model:
+  # Physical size of the model the sensors are mounted on. The origin (0, 0) is
+  # the bottom-left corner, so sensor coordinates must fall inside
+  # 0..length by 0..height. Same units as the sensor x/y below.
+  length: 120.0                  # along X
+  height: 80.0                  # along Y
+  units: "cm"                   # label only — used on the field panel's axes
+  keep_aspect: true            # false: the field fills the whole panel, with no
+                                # blank margins, stretching it if the panel's
+                                # shape differs from the model's.
+                                # true: true proportions, letterboxed instead.
+  background_image: null        # optional model layout drawn under the field,
+                                # e.g. "src/assets/model_layout.png"
+
+sensors:
+  # `id` must match the identifier used by the serial protocol and the CSV
+  # column name. x/y are the sensor's real position on the physical model, in
+  # the units given by model.units (cm).
+  #
+  # Default layout for a 120 x 80 cm model: three staggered rows (3 / 4 / 3) at
+  # y = 8, 40, 72. The middle row reaches nearest the left and right edges, the
+  # outer rows sit 8 cm in from the top and bottom. All coordinates are multiples
+  # of 4 cm, which makes them easy to mark out accurately.
+  #
+  # Rationale: with ten sensors this arrangement reconstructed a set of synthetic
+  # test fields with the lowest error of the layouts tried (RMSE ~1.4 °C, worst
+  # gap 25 cm to the nearest sensor). Rename the labels to match the model's real
+  # zones, and move any sensor that has to sit somewhere specific — accuracy
+  # degrades gracefully as long as the sensors stay spread out.
+  #
+  # `enabled: false` leaves a sensor out of everything — acquisition, plots, the
+  # interpolated field and recorded CSVs — e.g. a broken or unmounted probe.
+  # Keep it listed: the serial protocol still describes it (order for `values`,
+  # groups for `regex`) and whatever the Arduino sends for it is just dropped.
+  # Default true; read at startup, so restart the app after changing it.
+  # Example: - {id: T3, label: "T3", x: 96.0, y: 8.0, enabled: false}
+  - {id: T1,  label: "T1",    x:  24.0, y:  8.0}
+  - {id: T2,  label: "T2",  x:  60.0, y:  8.0}
+  - {id: T3,  label: "T3",   x:  96.0, y:  8.0}
+  - {id: T4,  label: "T4",   x:   8.0, y: 40.0}
+  - {id: T5,  label: "T5",       x:  36.0, y: 40.0}
+  - {id: T6,  label: "T6",      x:  84.0, y: 40.0}
+  - {id: T7,  label: "T7",  x: 112.0, y: 40.0}
+  - {id: T8,  label: "T8",       x:  24.0, y: 72.0}
+  - {id: T9,  label: "T9",     x:  60.0, y: 72.0}
+  - {id: T10, label: "T10",      x:  96.0, y: 72.0}
+
+calibration:
+  # Software compensation for the spread between sensors, measured against one
+  # trusted reference thermometer. Applied to live readings before anything else
+  # sees them; recorded sessions keep the raw values in `<id>_raw` columns.
+  #
+  # Don't write these by hand — record a calibration run with the app's
+  # "Record CSV" button while every sensor sits at the same known temperature,
+  # then generate the block below. These are the DS18B20s' own coefficients —
+  # never copy the PT100 ones from config.yaml:
+  #
+  #   uv run scripts/calibrate.py -c config/config.ds18b20.yaml \
+  #       --point logs/ice_bath.csv 0.05 --point logs/warm_bath.csv 45.31 --type linear
+  #
+  # One point gives `offset`, two or more give `linear` (or `table`).
+  enabled: true
+  reference: null               # what you calibrated against, e.g.
+                                # "Fluke 1524 with 5608 probe, cert 2026-03"
+  sensors: {}
+    # T1: {type: offset, offset: -0.35, note: "ice bath 2026-08-17"}
+    # T2: {type: linear, gain: 1.0021, offset: -0.12}
+    # T3: {type: table, points: [[0.10, 0.05], [25.30, 25.02], [80.10, 79.55]]}
+    # Sensors without an entry are used exactly as received.
+
+interpolation:
+  method: "rbf"                 # rbf | linear | cubic | nearest
+  grid_resolution: 100          # keep modest on the Pi (see CLAUDE.md §9.3)
+  redraw_rate_hz: 4             # cap on heatmap redraws; the field is only
+                                # actually redrawn when a new sample arrives, so
+                                # this bounds latency, not CPU
+
+plotting:
+  time_window_s: 300            # rolling window shown in the time-series panel
+  temperature_units: "C"        # C | F — display only, storage is always Celsius
+  color_map: "turbo"            # heatmap colour map
+  curve_colors: null            # null = auto-generated distinguishable colours,
+                                # or a list of hex strings, one per sensor
+  curve_width: 1                # px. 1 draws about twice as fast as anything
+                                # wider — raise only if read from a distance
+  show_legend: false             # legend on the time-series plot at startup;
+                                # toggle any time with the toolbar button (Ctrl+L)
+
+sensor_limits:
+  # Readings outside this range are flagged as a probable sensor fault: they are
+  # still plotted, but the status bar reports them. Set to null to disable.
+  # The firmware sends -999.00 for a missing DS18B20, a CRC failure or the 85 °C
+  # power-on value, which lands outside this band on purpose. The band is the
+  # DS18B20's own specified range — it cannot report anything beyond it.
+  value_range: {min: -55.0, max: 125.0}
+
+logging:
+  enabled: true
+  output_dir: "logs/"
+  level: "INFO"                 # DEBUG | INFO | WARNING | ERROR
+  log_frames: true              # also write live frames to logs/session_*.csv,
+                                # replayable later in Demo mode
+  include_raw: true             # when calibration is active, add <id>_raw columns
+                                # so a session can be re-calibrated afterwards
+
+sponsor:
+  # Branding strip. It is pinned to one edge of the window and cannot be closed
+  # or dragged away, whatever is done to the dock layout.
+  position: bottom              # bottom | top | left | right
+  alignment: center             # left | center | right along the bar
+                                # (on a left/right bar: left = top, right = bottom)
+  max_height_px: 60             # default height for every logo
+  spacing_px: 24                # gap between logos
+  logos:
+    # Placeholders — replace the paths with the real artwork. Add or remove
+    # entries freely; the strip sizes itself to whatever is listed.
+    - path: "src/assets/orlen-fundacja-logo.png"
+      link_url: null            # optional, makes this logo clickable
+      max_height_px: null       # optional per-logo override of max_height_px
+    - path: "src/assets/AGH-wydz-wiertnictwa-logo.jpg"
+      link_url: null
+      max_height_px: null
+    - path: "src/assets/kn-kg-logo.png"
+      link_url: null
+      max_height_px: null

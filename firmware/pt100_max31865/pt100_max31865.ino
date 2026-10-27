@@ -1,14 +1,17 @@
 /*
- * sensor_reader — reference sketch for the Physical Model Temperature Monitor.
+ * pt100_max31865 — PT100 build of the Physical Model Temperature Monitor sketch.
  *
  * Reads 10 PT100 RTDs through 10 MAX31865 amplifiers on the Mega 2560's hardware
  * SPI bus (one chip-select pin each) and prints one line per sample over USB:
  *
  *     T1:23.44,T2:23.06,...,T10:24.00\n
  *
- * This format is a contract with the Python app: see CLAUDE.md §5.1 and
- * src/datasource/live_serial.py (FIELD_RE / LINE_RE). Change one, change both,
- * and update firmware/README.md.
+ * This format is a contract with the Python app (CLAUDE.md §5.1, parsed per
+ * `serial.protocol` in config/config.yaml by src/datasource/protocol.py) and is
+ * shared with the DS18B20 build in firmware/ds18b20 — change one, change both,
+ * and update firmware/README.md. Flash with:
+ *
+ *     uv run scripts/flash_and_run.py --hardware pt100
  *
  * Board:    Arduino Mega 2560
  * Library:  Adafruit_MAX31865 (Arduino Library Manager)
@@ -113,7 +116,7 @@ void loop() {
     Serial.print('T');
     Serial.print(i + 1);
     Serial.print(':');
-    Serial.print(celsius, 2);  // no exponent, no NaN — see LINE_RE
+    Serial.print(celsius, 2);  // no exponent, no NaN — see CLAUDE.md §5.1
     if (i + 1 < SENSOR_COUNT) {
       Serial.print(',');
     }

@@ -1,4 +1,8 @@
-# TurboGrant Twin SFC — runtime configuration.
+# TurboGrant Twin SFC — runtime configuration for the **PT100 build**
+# (10 × PT100 via MAX31865, sketch firmware/pt100_max31865). This is the default
+# config; `uv run scripts/flash_and_run.py --hardware pt100` selects it.
+# The DS18B20 build has its own file, config/config.ds18b20.yaml — it differs
+# only in `calibration` and `sensor_limits`, so keep the other sections in sync.
 #
 # All relative paths are resolved against the project root (the directory that
 # contains this `config/` folder). Nothing in this file is duplicated in code:

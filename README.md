@@ -36,17 +36,23 @@ _TODO: add a screenshot or short GIF of the running app here (`docs/screenshot.p
 
 ## Hardware setup
 
-- **10 × PT100 RTDs**, each on its own **MAX31865** converter, mounted at the X/Y
-  positions listed in `config/config.yaml`.
-- **Arduino Mega 2560** — the MAX31865 boards share the hardware SPI bus (D50/D51/D52)
-  with one chip-select pin each (D22–D31), streaming one line per sample at 115200 baud,
-  1 Hz.
+The rig comes in two sensor builds. Both stream the same line protocol, so the app
+treats them identically; each has its own sketch and its own config file (mainly for
+its calibration):
+
+| Build | Sensors | Sketch | Config |
+|-------|---------|--------|--------|
+| `pt100` | 10 × PT100 RTD, each on a **MAX31865** converter; shared SPI bus (D50/D51/D52), chip selects D30–D39 | `firmware/pt100_max31865` | `config/config.yaml` |
+| `ds18b20` | 10 × **DS18B20**, one OneWire pin each (D22–D31), 4.7 kΩ pull-up per pin | `firmware/ds18b20` | `config/config.ds18b20.yaml` |
+
+- **Arduino Mega 2560** in both builds, streaming one line per sample at 115200 baud, 1 Hz.
+- Sensors are mounted at the X/Y positions listed in the build's config.
 - **Raspberry Pi 5** running Raspberry Pi OS (64-bit), Arduino attached over USB — this is
   the deployment target. Development happens on any PC using Demo mode.
 
-The Arduino sketch lives in [`firmware/`](firmware/README.md) — it is kept in this repo for
-reference and is not part of the Python application. See that file for wiring, the sensor
-address table and flashing instructions.
+The Arduino sketches live in [`firmware/`](firmware/README.md) — kept in this repo for
+reference, not part of the Python application. See that file for wiring, pin tables
+and flashing instructions.
 
 ## Installation
 
@@ -182,43 +188,53 @@ uv run python src/main.py --mode demo     # force Demo mode (no hardware needed)
 uv run python src/main.py --mode live     # force Live mode
 uv run python src/main.py --fullscreen    # kiosk/exhibit rig
 uv run python src/main.py -c /path/to/other.yaml --log-level DEBUG
+uv run python src/main.py -c config/config.ds18b20.yaml   # DS18B20 build
 ```
+
+Without `-c` the app uses `config/config.yaml`, the PT100 build's config.
 
 `uv run` syncs the environment before starting, so a fresh clone needs nothing else.
 (Activating `.venv` and running `python src/main.py` directly also works.)
 
 ### Flash the Arduino and run, in one command
 
-On the rig, `scripts/flash_and_run.py` compiles and uploads
-[`firmware/sensor_reader`](firmware/README.md), waits for the board to re-enumerate,
-then starts the app in Live mode on the same port:
+On the rig, `scripts/flash_and_run.py` compiles and uploads the sketch for the chosen
+build ([`firmware/`](firmware/README.md)), waits for the board to re-enumerate, then
+starts the app in Live mode on the same port with that build's config.
+`--hardware` is required:
 
 ```bash
-uv run scripts/flash_and_run.py                 # flash, then run live
-uv run scripts/flash_and_run.py --install-libs  # also install the MAX31865 library
-uv run scripts/flash_and_run.py --flash-only    # flash and stop
-uv run scripts/flash_and_run.py --skip-flash    # just run live
-uv run scripts/flash_and_run.py --dry-run       # print the commands, run nothing
+uv run scripts/flash_and_run.py --hardware pt100                  # flash, then run live
+uv run scripts/flash_and_run.py --hardware ds18b20                # the DS18B20 build
+uv run scripts/flash_and_run.py --hardware ds18b20 --install-libs # also install its libraries
+uv run scripts/flash_and_run.py --hardware pt100 --flash-only     # flash and stop
+uv run scripts/flash_and_run.py --hardware pt100 --skip-flash     # just run live
+uv run scripts/flash_and_run.py --hardware pt100 --dry-run        # print the commands, run nothing
 ```
+
+`--sketch` and `-c/--config` override the build's defaults.
 
 It needs [`arduino-cli`](https://arduino.github.io/arduino-cli/latest/installation/)
 on PATH (or `--arduino-cli /path/to/it`). The board is selected with `--fqbn`
 (default `arduino:avr:mega`) and the port comes from the app's own auto-detection, so
 the board that gets flashed is the one the app then reads — override with `--port`.
 Unrecognised arguments are passed through to the app, e.g.
-`uv run scripts/flash_and_run.py --fullscreen`.
+`uv run scripts/flash_and_run.py --hardware pt100 --fullscreen`.
 
-The config is validated *before* the board is touched, so a broken `config.yaml`
-cannot cost you a flash cycle.
+The config is validated *before* the board is touched, so a broken config cannot cost
+you a flash cycle.
 
 Mode can also be switched at runtime from the toolbar, along with Start/Stop, Pause and
 Restart replay (Demo), and CSV recording.
 
 ## Calibration
 
-Ten PT100 channels never read identically — RTD tolerance, the breakout's reference
-resistor and lead resistance all differ. The spread is corrected in software, from
-`config.yaml`, against one trusted reference thermometer.
+Ten channels never read identically — for PT100s, RTD tolerance, the breakout's
+reference resistor and lead resistance all differ; DS18B20s carry their own ±0.5 °C
+factory tolerance. The spread is corrected in software, from the build's config,
+against one trusted reference thermometer. **Each build is calibrated separately**:
+PT100 coefficients live in `config/config.yaml`, DS18B20 ones in
+`config/config.ds18b20.yaml` (pass `-c config/config.ds18b20.yaml` to the script).
 
 **Measuring it:**
 
@@ -227,7 +243,7 @@ resistor and lead resistance all differ. The spread is corrected in software, fr
 2. Press **Record CSV** in the app for a minute or two, then press it again.
 3. Repeat at a second temperature if you want span as well as offset — e.g. an ice
    bath and a warm bath spanning the range you actually care about.
-4. Fit the coefficients and paste the result into `config.yaml`:
+4. Fit the coefficients and paste the result into the build's config:
 
 ```bash
 uv run scripts/calibrate.py --point logs/ice_bath.csv 0.05 \
@@ -313,9 +329,10 @@ scripts/flash_and_run.py  dev helper: flash the Arduino, then run in Live mode
 pyproject.toml          dependencies and Python requirement (uv-managed)
 uv.lock                 exact resolved versions — commit it, do not edit by hand
 .python-version         interpreter pin (3.14) used by uv
-config/config.yaml      runtime configuration (the only place settings live)
+config/config.yaml      runtime configuration, PT100 build (the only place settings live)
+config/config.ds18b20.yaml  runtime configuration, DS18B20 build
 data/demo/              example CSV for Demo mode
-firmware/               Arduino sketch + wiring notes (not part of the Python app)
+firmware/               Arduino sketches, one per build, + wiring notes (not part of the Python app)
 src/main.py             entry point
 src/config/             YAML loading, schema and validation
 src/datasource/         DataSource interface + live serial and CSV replay backends
