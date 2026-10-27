@@ -133,7 +133,9 @@ class DemoCSVSource(DataSource):
     # ---------------------------------------------------------------- internals
     @property
     def _sensor_ids_ordered(self) -> tuple[str, ...]:
-        return tuple(sensor.id for sensor in self._sensors)
+        # Enabled sensors only: a disabled sensor's column may be absent (e.g. a
+        # session recorded without it) and is never replayed anyway.
+        return tuple(sensor.id for sensor in self._active_sensors)
 
     @Slot()
     def _tick(self) -> None:

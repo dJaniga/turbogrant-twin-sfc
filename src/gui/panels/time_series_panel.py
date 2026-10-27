@@ -12,6 +12,7 @@ from typing import Sequence
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QSplitter, QWidget
 
 from config.schema import AppTheme, PlottingConfig, SensorConfig
@@ -37,12 +38,19 @@ class TimeSeriesPanel(QWidget):
         plotting: PlottingConfig,
         theme: Theme | None = None,
         parent: QWidget | None = None,
+        colors: Sequence[QColor] | None = None,
     ) -> None:
+        """`colors`, one per sensor, overrides the colours derived from `plotting`
+        — used to keep each sensor's colour stable when some are disabled."""
         super().__init__(parent)
         self._sensors = tuple(sensors)
         self._plotting = plotting
         self._theme = theme or resolve_theme(AppTheme.GRAY)
-        self._colors = curve_colors(len(self._sensors), plotting.curve_colors)
+        self._colors = (
+            list(colors)
+            if colors is not None
+            else curve_colors(len(self._sensors), plotting.curve_colors)
+        )
 
         self._plot = pg.PlotWidget(axisItems={"bottom": pg.DateAxisItem(orientation="bottom")})
         self._plot.setBackground("default")

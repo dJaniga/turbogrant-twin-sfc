@@ -49,14 +49,19 @@ def load_config(path: str | Path | None = None) -> Config:
     _check_referenced_files(config)
     _warn_about_rates(config)
     _log.info(
-        "Loaded configuration from %s (%d sensors, model %g × %g %s, default mode: %s)",
+        "Loaded configuration from %s (%d sensors, %d active, model %g × %g %s, "
+        "default mode: %s)",
         config_path,
         len(config.sensors),
+        len(config.active_sensors),
         config.model.length,
         config.model.height,
         config.model.units,
         config.app.default_mode.value,
     )
+    disabled = [sensor.id for sensor in config.sensors if not sensor.enabled]
+    if disabled:
+        _log.info("Disabled sensor(s), readings ignored: %s", ", ".join(disabled))
     return config
 
 

@@ -68,8 +68,12 @@ class DataSource(QObject, metaclass=_QObjectABCMeta):
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
+        # Every configured sensor: the wire protocol describes all of them.
         self._sensors = tuple(sensors)
         self._sensor_ids = frozenset(s.id for s in self._sensors)
+        # The enabled subset: the only readings that are ever emitted.
+        self._active_sensors = tuple(s for s in self._sensors if s.enabled)
+        self._active_ids = frozenset(s.id for s in self._active_sensors)
         self._limits = limits or SensorLimits(value_range=None)
         self._calibration = calibration or Calibration()
         self._state = ConnectionState.DISCONNECTED
@@ -125,14 +129,15 @@ class DataSource(QObject, metaclass=_QObjectABCMeta):
     ) -> bool:
         """Validate a complete set of readings and emit it as a frame.
 
-        Returns ``False`` (and emits nothing) when the sample does not cover
-        exactly the configured sensors — a partial frame is worse than no frame,
-        because it silently biases the interpolated field.
+        Readings from disabled sensors are dropped here, before anything else
+        sees them. Returns ``False`` (and emits nothing) when an enabled sensor is
+        missing or an id is not configured at all — a partial frame is worse than
+        no frame, because it silently biases the interpolated field.
         """
         found = frozenset(values)
-        if found != self._sensor_ids:
-            missing = sorted(self._sensor_ids - found)
-            unexpected = sorted(found - self._sensor_ids)
+        unexpected = sorted(found - self._sensor_ids)
+        missing = sorted(self._active_ids - found)
+        if missing or unexpected:
             details = []
             if missing:
                 details.append(f"missing {', '.join(missing)}")
@@ -140,6 +145,8 @@ class DataSource(QObject, metaclass=_QObjectABCMeta):
                 details.append(f"unexpected {', '.join(unexpected)}")
             self._report_error(f"Sample discarded: {'; '.join(details)}")
             return False
+        if found != self._active_ids:
+            values = {k: v for k, v in values.items() if k in self._active_ids}
 
         # Range check first, on the *raw* reading: a fault sentinel such as
         # -999.00 must be recognised as a fault, and must not be shifted by a

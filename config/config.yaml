@@ -90,6 +90,13 @@ sensors:
   # gap 25 cm to the nearest sensor). Rename the labels to match the model's real
   # zones, and move any sensor that has to sit somewhere specific — accuracy
   # degrades gracefully as long as the sensors stay spread out.
+  #
+  # `enabled: false` leaves a sensor out of everything — acquisition, plots, the
+  # interpolated field and recorded CSVs — e.g. a broken or unmounted probe.
+  # Keep it listed: the serial protocol still describes it (order for `values`,
+  # groups for `regex`) and whatever the Arduino sends for it is just dropped.
+  # Default true; read at startup, so restart the app after changing it.
+  # Example: - {id: T3, label: "T3", x: 96.0, y: 8.0, enabled: false}
   - {id: T1,  label: "T1",    x:  24.0, y:  8.0}
   - {id: T2,  label: "T2",  x:  60.0, y:  8.0}
   - {id: T3,  label: "T3",   x:  96.0, y:  8.0}

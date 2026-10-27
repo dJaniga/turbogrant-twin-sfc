@@ -266,6 +266,11 @@ class SensorConfig(_Section):
     label: str = Field(min_length=1)
     x: float
     y: float
+    enabled: bool = True
+    """Whether readings from this sensor are used at all. A disabled sensor stays in
+    the list because the wire protocol still describes it (positional ``values``
+    order, ``regex`` groups), but its readings are dropped on arrival: not
+    calibrated, plotted, interpolated or recorded. Read once at startup."""
 
     @model_validator(mode="before")
     @classmethod
@@ -499,6 +504,9 @@ class Config(_Section):
                 )
             seen[sensor.id] = index
 
+        if not any(sensor.enabled for sensor in self.sensors):
+            raise ValueError("sensors: every sensor is disabled — enable at least one")
+
         extent = self.model.extent
         outside = [s.id for s in self.sensors if not extent.contains(s.x, s.y)]
         if outside:
@@ -577,6 +585,15 @@ class Config(_Section):
     @property
     def sensor_ids_set(self) -> frozenset[str]:
         return frozenset(self.sensor_ids)
+
+    @property
+    def active_sensors(self) -> tuple[SensorConfig, ...]:
+        """The enabled sensors, in config order — what everything downstream uses."""
+        return tuple(sensor for sensor in self.sensors if sensor.enabled)
+
+    @property
+    def active_sensor_ids(self) -> tuple[str, ...]:
+        return tuple(sensor.id for sensor in self.active_sensors)
 
     def sensor(self, sensor_id: str) -> SensorConfig:
         for sensor in self.sensors:

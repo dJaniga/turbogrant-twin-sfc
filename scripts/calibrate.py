@@ -95,9 +95,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
 
-    sensor_ids = list(config.sensor_ids)
+    # Disabled sensors are not recorded, so only the enabled ones can be fitted.
+    sensor_ids = list(config.active_sensor_ids)
     runs: list[tuple[float, pd.DataFrame]] = []
-    print(f"Calibration runs ({len(sensor_ids)} sensors)")
+    print(f"Calibration runs ({len(sensor_ids)} enabled sensors)")
     for session, reference in args.point:
         frame = load_run(Path(session), sensor_ids, args.trim)
         runs.append((float(reference), frame))
@@ -143,6 +144,17 @@ def main(argv: list[str] | None = None) -> int:
         entries[sensor_id] = entry
         print(f"  {sensor_id:6s} {', '.join(f'{m:7.3f}' for m in means):>26s} "
               f"{summary:>34s} {residual:8.3f}  (noise ±{noise:.3f})")
+
+    # Pasting the block replaces calibration.sensors wholesale, so carry over
+    # what disabled sensors already have rather than silently dropping it.
+    kept = [sensor_id for sensor_id in config.sensor_ids
+            if sensor_id not in entries and sensor_id in config.calibration.sensors]
+    for sensor_id in kept:
+        entries[sensor_id] = config.calibration.sensors[sensor_id].model_dump(
+            mode="json", exclude_defaults=True
+        )
+    if kept:
+        print(f"  kept existing entries for disabled sensor(s): {', '.join(kept)}")
 
     block = {"calibration": {"enabled": True,
                              "reference": args.reference,

@@ -32,6 +32,7 @@ from logging_utils.logger import CsvFrameLogger
 from processing.buffer import RollingBuffer
 from processing.calibration import Calibration
 from . import theme
+from .colors import curve_colors
 from .mode_controller import ModeController
 from .panels.heatmap_panel import HeatmapPanel
 from .panels.sponsor_panel import SponsorPanel
@@ -61,17 +62,19 @@ class MainWindow(QMainWindow):
         self.setDockNestingEnabled(True)
         self._apply_icon()
 
+        # Only enabled sensors exist from here on: sources drop the rest on
+        # arrival, and the set is fixed for the lifetime of the process.
         self._buffer = RollingBuffer(
-            sensor_ids=config.sensor_ids,
+            sensor_ids=config.active_sensor_ids,
             window_s=config.plotting.time_window_s,
             # Sized by how fast data *arrives*, not how often the GUI redraws.
             expected_rate_hz=max(config.demo.playback_rate_hz, 5.0),
         )
         self._recorder = CsvFrameLogger(
-            config.sensor_ids, config.logging.output_dir, config.logging.include_raw
+            config.active_sensor_ids, config.logging.output_dir, config.logging.include_raw
         )
         self._calibration_active = Calibration.from_config(
-            config.calibration, config.sensor_ids
+            config.calibration, config.active_sensor_ids
         ).active
 
         self._status = StatusBar(self)
@@ -96,6 +99,7 @@ class MainWindow(QMainWindow):
         self._sync_mode_actions(config.app.default_mode)
         self._status.set_mode(config.app.default_mode)
         self._status.set_state(ConnectionState.DISCONNECTED)
+        self._status.set_sensor_count(len(config.active_sensors), len(config.sensors))
 
     # ------------------------------------------------------------------ startup
     def start(self) -> None:
@@ -123,11 +127,23 @@ class MainWindow(QMainWindow):
             app.setWindowIcon(icon)  # taskbar / window manager
 
     def _build_panels(self) -> None:
+        # Colours are assigned over *all* configured sensors, so a sensor keeps
+        # its colour whether or not the ones before it are enabled.
+        all_colors = curve_colors(len(self._config.sensors), self._config.plotting.curve_colors)
+        active_colors = [
+            color
+            for sensor, color in zip(self._config.sensors, all_colors)
+            if sensor.enabled
+        ]
         self._time_series = TimeSeriesPanel(
-            self._config.sensors, self._config.plotting, self._theme, self
+            self._config.active_sensors,
+            self._config.plotting,
+            self._theme,
+            self,
+            colors=active_colors,
         )
         self._heatmap = HeatmapPanel(
-            self._config.sensors,
+            self._config.active_sensors,
             self._config.model,
             self._config.interpolation,
             self._config.plotting,
@@ -298,7 +314,10 @@ class MainWindow(QMainWindow):
             return
         self._field_dirty = False
         values = np.array(
-            [self._latest_frame.values.get(sensor_id, np.nan) for sensor_id in self._config.sensor_ids],
+            [
+                self._latest_frame.values.get(sensor_id, np.nan)
+                for sensor_id in self._config.active_sensor_ids
+            ],
             dtype=float,
         )
         self._heatmap.update_field(values, self._latest_frame.out_of_range)

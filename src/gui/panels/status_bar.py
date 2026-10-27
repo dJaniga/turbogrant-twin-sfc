@@ -37,6 +37,7 @@ class StatusBar(QStatusBar):
         self._frame_times: deque[float] = deque(maxlen=self._RATE_WINDOW)
 
         self._mode = self._add_label("Mode: —")
+        self._sensors = self._add_label("Sensors: —")
         self._source = self._add_label("Source: —")
         self._state = self._add_label("Disconnected")
         self._rate = self._add_label("0.0 Hz")
@@ -54,6 +55,14 @@ class StatusBar(QStatusBar):
     # ------------------------------------------------------------------ updates
     def set_mode(self, mode: Mode) -> None:
         self._mode.setText(f"Mode: {mode.label}")
+
+    def set_sensor_count(self, active: int, total: int) -> None:
+        """Enabled vs configured sensors (``sensors[].enabled``, fixed at startup)."""
+        self._sensors.setText(f"Sensors: {active}/{total}")
+        self._sensors.setToolTip(
+            "Enabled / configured sensors. Change `enabled` under `sensors` in "
+            "config.yaml and restart to use a different set."
+        )
 
     def set_source(self, description: str) -> None:
         self._source.setText(f"Source: {description}")

@@ -26,7 +26,7 @@ __all__ = ["ModeController"]
 
 
 def _build_live(config: Config, parent: QObject) -> DataSource:
-    calibration = Calibration.from_config(config.calibration, config.sensor_ids)
+    calibration = Calibration.from_config(config.calibration, config.active_sensor_ids)
     calibration.log_summary()
     return LiveSerialSource(
         config.serial, config.sensors, config.sensor_limits, calibration, parent
@@ -38,7 +38,7 @@ def _build_demo(config: Config, parent: QObject) -> DataSource:
     # calibrate by default — doing so would apply the correction twice. Set
     # `demo.apply_calibration: true` when replaying a deliberately raw file.
     calibration = (
-        Calibration.from_config(config.calibration, config.sensor_ids)
+        Calibration.from_config(config.calibration, config.active_sensor_ids)
         if config.demo.apply_calibration
         else Calibration()
     )

@@ -97,6 +97,15 @@ Everything runtime-configurable lives in [`config/config.yaml`](config/config.ya
 Relative paths are resolved against the project root. The sensor **count is not hardcoded** —
 add or remove entries under `sensors:` and the plots, interpolation and CSV columns follow.
 
+To choose **which sensors are used** without touching the wiring or protocol, set
+`enabled: false` on a sensor (default `true`). A disabled sensor stays listed — the serial
+protocol still describes it — but its readings are dropped on arrival: it is not
+calibrated, plotted, interpolated, range-checked or recorded, and it no longer has to be
+present on the line for a frame to count as complete. The status bar shows the result as
+`Sensors: 8/10`. The set is read at startup, so restart the app after changing it.
+Recordings then contain only the enabled sensors' columns; Demo mode needs columns for
+the enabled sensors only.
+
 `app.refresh_rate_hz` controls how smoothly the time-series plot scrolls — the axis
 follows wall-clock time, so higher is smoother and costs proportionally more CPU. 10 Hz
 suits a desktop; on the Raspberry Pi start around 5 Hz and raise it while watching `top`.
@@ -137,6 +146,7 @@ model:
 
 sensors:
   - {id: T1, label: "Bottom left", x: 24.0, y: 8.0}
+  - {id: T2, label: "Bottom mid", x: 60.0, y: 8.0, enabled: false}   # ignored; restart to apply
   # ... one entry per sensor; x/y are positions on the model, in cm.
   # The default is a staggered 3/4/3 grid covering the whole model.
 
@@ -263,7 +273,8 @@ T1:23.44,T2:23.06,T3:22.91,T4:23.88,T5:25.10,T6:24.02,T7:23.55,T8:24.71,T9:23.19
 
 `T` + 1–2 digits, a colon, then a signed integer or decimal; pairs separated by commas
 (spaces around them are tolerated). Lines that do not match, or that do not cover every
-configured sensor, are discarded and logged rather than plotted.
+enabled sensor, are discarded and logged rather than plotted. Readings for sensors with
+`enabled: false` may be present or absent; they are dropped either way.
 
 **The format is configurable** — match the sketch instead of editing Python, under
 `serial.protocol` in `config/config.yaml`:
@@ -281,7 +292,8 @@ serial:
 ```
 
 - `key_value` — `T1:23.44,T2:23.06,…` (default), order-independent.
-- `values` — `23.44,23.06,…`, mapped positionally onto the `sensors` list.
+- `values` — `23.44,23.06,…`, mapped positionally onto the `sensors` list (disabled
+  sensors included — they keep their slot).
 - `regex` — anything else, e.g. `"^#(?P<T1>-?\\d+\\.\\d+);(?P<T2>-?\\d+\\.\\d+)$"`.
 
 Invalid combinations (a regex whose groups don't match the sensor ids, an `id_pattern`
@@ -291,7 +303,7 @@ discarding every line. Parsing lives in one place — `src/datasource/protocol.p
 A faulted channel (open or shorted RTD) is sent as `-999.00`: the frame stays complete, and
 the value falls outside `sensor_limits.value_range`, so the app flags that sensor in red.
 
-Recorded CSVs mirror this: a `timestamp` column plus one column per sensor id, so any
+Recorded CSVs mirror this: a `timestamp` column plus one column per enabled sensor id, so any
 session in `logs/` can be pointed at by `demo.csv_path` and replayed.
 
 ## Project structure
